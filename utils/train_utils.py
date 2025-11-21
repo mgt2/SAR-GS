@@ -10,6 +10,7 @@ from .data_painter import paint_spectrum
 from .loss_utils import psnr
 import torch.nn as nn
 
+
 import lpips
 loss_lpips_t = lpips.LPIPS(net='alex')
 
@@ -20,6 +21,43 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from io import BytesIO
+from PIL import Image
+import numpy as np
+
+def plot_waveform(waveform, title=""):
+    '''Convert 1D waveform to plottable image'''
+    if waveform.dim() == 3:
+        waveform = waveform[0]  # Remove batch dim
+    
+    waveform_np = waveform.detach().cpu().numpy()
+    
+    fig, ax = plt.subplots(figsize=(10, 3))
+    if waveform_np.shape[0] == 1:
+        ax.plot(waveform_np[0], linewidth=1)
+        ax.set_xlabel('Sample Index')
+        ax.set_ylabel('Amplitude')
+    else:
+        ax.imshow(waveform_np, aspect='auto', cmap='viridis')
+        ax.set_xlabel('Sample Index')
+        ax.set_ylabel('Channel')
+    
+    if title:
+        ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=100)
+    buf.seek(0)
+    img = Image.open(buf)
+    img_array = np.array(img)[:, :, :3]  # RGB only
+    plt.close(fig)
+    
+    return torch.from_numpy(img_array).permute(2, 0, 1).float() / 255.0
 
 def training_report(tb_writer,
                     iteration,
@@ -68,25 +106,42 @@ def training_report(tb_writer,
                     gt_image = gt_image.unsqueeze(0)
 
                     # if tb_writer and (idx < 5):
+                    # if tb_writer:
+                        
+                    #     file_name_test = config['name'] + "_view_{}/render".format(viewpoint.spectrum_name)
+
+                    #     # add_images function expects the input tensor to be in the N-C-H-W format, after image[None]: (1, 1, 90, 360) 
+                    #     tb_writer.add_images(file_name_test, image[None], global_step=iteration)
+                        
+                    #     if iteration == testing_iterations[0]:  # testing_iterations = [7000, 30000]
+
+                    #         file_name_gt = config['name'] + "_view_{}/ground_truth".format(viewpoint.spectrum_name)
+                    #         tb_writer.add_images(file_name_gt, gt_image[None], global_step=iteration)
                     if tb_writer:
-                        
-                        file_name_test = config['name'] + "_view_{}/render".format(viewpoint.spectrum_name)
-
-                        # add_images function expects the input tensor to be in the N-C-H-W format, after image[None]: (1, 1, 90, 360) 
-                        tb_writer.add_images(file_name_test, image[None], global_step=iteration)
-                        
-                        if iteration == testing_iterations[0]:  # testing_iterations = [7000, 30000]
-
-                            file_name_gt = config['name'] + "_view_{}/ground_truth".format(viewpoint.spectrum_name)
-                            tb_writer.add_images(file_name_gt, gt_image[None], global_step=iteration)
+                        # Handle 1D waveforms - convert to 2D for visualization
+                        file_name_render = config['name'] + "_view_{}/render".format(viewpoint.spectrum_name)
+                        if gt_image.shape[-2] < 10:  # Height < 10 indicates 1D data
+                            # Pad height to make it displayable
+                            render_img = plot_waveform(image, f"Render - {viewpoint.spectrum_name}")
+                            tb_writer.add_images(file_name_render, render_img.unsqueeze(0), global_step=iteration, dataformats='NCHW')
+                            if iteration == testing_iterations[0]:
+                                gt_img = plot_waveform(gt_image, f"GT - {viewpoint.spectrum_name}")
+                                file_name_gt = config['name'] + "_view_{}/ground_truth".format(viewpoint.spectrum_name)
+                                tb_writer.add_images(file_name_gt, gt_img.unsqueeze(0), global_step=iteration, dataformats='NCHW')
+                        else:
+                            # Normal 2D images
+                            if iteration == testing_iterations[0]:
+                                file_name_gt = config['name'] + "_view_{}/ground_truth".format(viewpoint.spectrum_name)
+                                tb_writer.add_images(file_name_gt, gt_image[None], global_step=iteration)
+                            tb_writer.add_images(file_name_render, image[None], global_step=iteration)
                     
                     l1_test += l1_loss(image, gt_image).mean().double()
                     psnr_test += psnr(image, gt_image).mean().double()
 
                     filename = os.path.join(image_path, f"ite_{iteration:06d}_{config['name']}_{idx:06d}.png")
-                    paint_spectrum(gt_image.cpu().squeeze().numpy(), 
-                                                  image.cpu().squeeze().numpy(),
-                                                  save_path=filename)
+                    # paint_spectrum(gt_image.cpu().squeeze().numpy(), 
+                    #                               image.cpu().squeeze().numpy(),
+                    #                               save_path=filename)
 
                 l1_test /= len(config['spectrums'])
                 psnr_test /= len(config['spectrums'])

@@ -6,7 +6,7 @@ from utils.system_utils import searchForMaxIteration
 from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 
-from scene.dataset_readers import readRFSceneInfo
+from scene.dataset_readers import readPickleRFSceneInfo
 
 class Scene:
 
@@ -33,7 +33,8 @@ class Scene:
 
             print("\nLoading saved point cloud data at iteration {}\n".format(self.loaded_iter))
 
-        scene_info = readRFSceneInfo(args)
+        pickle_path = "/fs/nexus-scratch/garner/SAR-GS/data/MMwave_recon/output_dir/sim_data_occ_bunny_5e09_b_0.7_2sphere.pik"
+        scene_info = readPickleRFSceneInfo(pickle_path, args)
 
         if shuffle:
             random.shuffle(scene_info.train_spectrums)
